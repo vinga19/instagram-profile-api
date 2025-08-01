@@ -73,7 +73,11 @@ def fetch_instagram_rapidapi_free(username):
         
         if response.status_code == 200:
             data = response.json()
-            return {'success': True, 'data': data, 'method': api['name']}
+            # A API retorna um JSON com 'user_data' e 'user_posts'
+            if 'user_data' in data and 'user_posts' in data:
+                return {'success': True, 'data': data, 'method': api['name']}
+            else:
+                return {'success': False, 'error': 'api_error', 'message': f"Resposta da API com estrutura inválida. JSON keys: {list(data.keys())}"}
         else:
             print(f"❌ {api['name']} - Status {response.status_code}, Resposta: {response.text}")
             return {'success': False, 'error': 'api_error', 'message': f"Status {response.status_code}: {response.text}"}
@@ -140,7 +144,6 @@ def normalize_profile_data(api_data, username, method):
             "data_keys": list(user_data.keys())[:10]
         }
         
-        # Extrai as URLs das últimas postagens com base no JSON fornecido
         latest_posts_urls = []
         num_posts_to_get = 10
         
@@ -150,8 +153,9 @@ def normalize_profile_data(api_data, username, method):
                 url = None
                 
                 if 'image_versions2' in node and 'candidates' in node['image_versions2'] and node['image_versions2']['candidates']:
-                    # Extrai a primeira URL disponível da lista de candidatos
                     url = node['image_versions2']['candidates'][0]['url']
+                elif 'video_versions' in node and 'candidates' in node['video_versions'] and node['video_versions']['candidates']:
+                    url = node['video_versions']['candidates'][0]['url']
 
                 if url and url not in latest_posts_urls:
                     latest_posts_urls.append(url)
@@ -227,7 +231,7 @@ def health_check():
         "rapidapi_key_preview": f"{rapidapi_key[:10]}***{rapidapi_key[-5:]}" if rapidapi_key else "❌ Não configurada",
         "timestamp": datetime.now().isoformat(),
         "cache_size": len(cache),
-        "version": "6.0.2 - Normalização Final Corrigida",
+        "version": "6.0.3 - Versão Final e Corrigida",
         "methods": [
             "🌟 Instagram Scraper Stable API (ig_get_fb_profile_hover)"
         ],
@@ -322,7 +326,7 @@ def index():
     
     return jsonify({
         "🚀 API": "Instagram Profile Scraper - VERSÃO DE TESTE",
-        "version": "6.0.2 - Normalização Final Corrigida",
+        "version": "6.0.3 - Versão Final e Corrigida",
         "status": "✅ Funciona!" if rapidapi_configured else "⚠️ Configuração pendente",
         "guarantee": "🛡️ Dependente da sua chave RapidAPI - sem fallbacks",
         "endpoints": {
