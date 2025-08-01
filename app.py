@@ -73,7 +73,6 @@ def fetch_instagram_rapidapi_free(username):
         
         if response.status_code == 200:
             data = response.json()
-            # A API retorna um JSON com 'user_data' e 'user_posts'
             if 'user_data' in data and 'user_posts' in data:
                 return {'success': True, 'data': data, 'method': api['name']}
             else:
@@ -85,6 +84,52 @@ def fetch_instagram_rapidapi_free(username):
     except Exception as e:
         print(f"❌ Erro na API {api['name']}: {str(e)}")
         return {'success': False, 'error': 'exception', 'message': f'Erro na requisição: {str(e)}'}
+        
+def fetch_instagram_public_scraper(username):
+    """Método 2: Scraper público via proxy (sem API key)"""
+    
+    try:
+        print(f"🔍 Tentando scraper público para: {username}")
+        
+        # Simula um browser real
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+        }
+        
+        # Usando endpoint público (sem garantias, mas às vezes funciona)
+        public_apis = [
+            f"https://www.instagram.com/{username}/?__a=1", # Isso pode ser bloqueado
+            f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}", # Isso pode ser bloqueado
+        ]
+        
+        for api_url in public_apis:
+            try:
+                print(f"🌐 Tentando endpoint público: {api_url}")
+                response = requests.get(api_url, headers=headers, timeout=10)
+                
+                print(f"📊 Status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    try:
+                        data = response.json()
+                        return {'success': True, 'data': data, 'method': 'public_scraper'}
+                    except json.JSONDecodeError:
+                        print("❌ Resposta não é JSON válido")
+                        continue
+                        
+            except Exception as e:
+                print(f"❌ Erro no endpoint público: {str(e)}")
+                continue
+        
+        return {'success': False, 'error': 'public_blocked', 'message': 'Endpoints públicos bloqueados'}
+        
+    except Exception as e:
+        return {'success': False, 'error': 'scraper_error', 'message': f'Erro no scraper: {str(e)}'}
+
 
 def normalize_profile_data(api_data, username, method):
     """Normaliza os dados do perfil e extrai as URLs das postagens."""
@@ -188,10 +233,30 @@ def get_instagram_profile_original(username):
         
         rate_limit()
         
-        result = fetch_instagram_rapidapi_free(username)
+        methods = [
+            ("RapidAPI Free", fetch_instagram_rapidapi_free),
+            ("Public Scraper", fetch_instagram_public_scraper),
+        ]
         
-        if not result['success']:
-            return jsonify({"error": "Falha na RapidAPI", "details": result.get('message'), "timestamp": datetime.now().isoformat()}), 502
+        result = None
+        for method_name, method_func in methods:
+            print(f"🚀 Tentando {method_name}...")
+            result = method_func(username)
+            
+            if result and result.get('success'):
+                print(f"✅ Sucesso com {method_name}!")
+                break
+            else:
+                print(f"❌ {method_name} falhou: {result.get('message', 'Erro desconhecido')}")
+                time.sleep(0.5)
+
+        if not result or not result.get('success'):
+            return jsonify({
+                "error": "Todos os métodos falharam",
+                "details": "Nenhuma fonte de dados funcionou",
+                "timestamp": datetime.now().isoformat(),
+                "suggestion": "Verifique sua chave RapidAPI ou tente novamente mais tarde"
+            }), 502
         
         profile_data = normalize_profile_data(result['data'], username, result['method'])
         
@@ -231,11 +296,12 @@ def health_check():
         "rapidapi_key_preview": f"{rapidapi_key[:10]}***{rapidapi_key[-5:]}" if rapidapi_key else "❌ Não configurada",
         "timestamp": datetime.now().isoformat(),
         "cache_size": len(cache),
-        "version": "6.0.3 - Versão Final e Corrigida",
+        "version": "6.1.0 - Apenas RapidAPI e Scraper Público",
         "methods": [
-            "🌟 Instagram Scraper Stable API (ig_get_fb_profile_hover)"
+            "🌟 Instagram Scraper Stable API (ig_get_fb_profile_hover)",
+            "🌐 Scraper público (backup)"
         ],
-        "note": "Esta versão depende exclusivamente da chave RapidAPI para a API acima"
+        "note": "Esta versão não utiliza dados mock, retornando erro se todas as fontes falharem."
     })
 
 @app.route('/test/<username>', methods=['GET'])
@@ -326,7 +392,7 @@ def index():
     
     return jsonify({
         "🚀 API": "Instagram Profile Scraper - VERSÃO DE TESTE",
-        "version": "6.0.3 - Versão Final e Corrigida",
+        "version": "6.1.0 - Apenas RapidAPI e Scraper Público",
         "status": "✅ Funciona!" if rapidapi_configured else "⚠️ Configuração pendente",
         "guarantee": "🛡️ Dependente da sua chave RapidAPI - sem fallbacks",
         "endpoints": {
