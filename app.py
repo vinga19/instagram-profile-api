@@ -72,7 +72,7 @@ def fetch_instagram_looter(username):
         
         if response.status_code == 200:
             data = response.json()
-            if 'user' in data:
+            if 'full_name' in data and 'username' in data:
                 return {'success': True, 'data': data, 'method': api['name']}
             else:
                 return {'success': False, 'error': 'api_error', 'message': f"Resposta da API com estrutura inválida. JSON keys: {list(data.keys())}"}
@@ -135,12 +135,12 @@ def normalize_profile_data(api_data, username, method):
     try:
         print(f"🔧 Normalizando dados do método: {method}")
         
-        # A API retorna um objeto com a chave 'user'
-        user_data = api_data.get('user')
-        posts_data = api_data.get('items', [])
+        user_data = api_data
         
-        if not user_data:
-            print("❌ Estrutura de dados de usuário não reconhecida. Chave 'user' não encontrada.")
+        posts_data = api_data.get('edge_owner_to_timeline_media', {}).get('edges', [])
+        
+        if not user_data or 'full_name' not in user_data:
+            print("❌ Estrutura de dados de usuário não reconhecida. Chave 'full_name' não encontrada no nível superior.")
             return None
         
         print(f"✅ User data encontrado - Keys: {list(user_data.keys())[:5]}...")
@@ -158,7 +158,13 @@ def normalize_profile_data(api_data, username, method):
                 value = user_data.get(field)
                 if value is not None:
                     try:
-                        return int(value)
+                        # Adaptação para a estrutura da API
+                        if isinstance(value, dict) and 'count' in value:
+                            return int(value['count'])
+                        elif isinstance(value, dict) and 'edge_count' in value:
+                            return int(value['edge_count'])
+                        else:
+                            return int(value)
                     except (ValueError, TypeError):
                         continue
             return default
@@ -175,9 +181,9 @@ def normalize_profile_data(api_data, username, method):
             "user_id": get_field(['pk', 'id']),
             "full_name": get_field(['full_name', 'fullName', 'display_name']),
             "biography": get_field(['biography', 'bio', 'description', 'about']),
-            "followers": get_int_field(['follower_count']),
-            "following": get_int_field(['following_count']),
-            "posts_count": get_int_field(['media_count']),
+            "followers": get_int_field(['follower_count', 'edge_followed_by']),
+            "following": get_int_field(['following_count', 'edge_follow']),
+            "posts_count": get_int_field(['media_count', 'edge_owner_to_timeline_media']),
             "profile_pic_url": get_field(['profile_pic_url']),
             "is_private": get_bool_field(['is_private', 'private', 'is_locked']),
             "is_verified": get_bool_field(['is_verified', 'verified']),
@@ -192,17 +198,25 @@ def normalize_profile_data(api_data, username, method):
         num_posts_to_get = 10
         
         for post_item in posts_data:
-            url = None
-            if 'image_versions2' in post_item and 'candidates' in post_item['image_versions2'] and post_item['image_versions2']['candidates']:
-                url = post_item['image_versions2']['candidates'][0]['url']
-            elif 'video_versions' in post_item and 'candidates' in post_item['video_versions'] and post_item['video_versions']['candidates']:
-                url = post_item['video_versions']['candidates'][0]['url']
+            if 'node' in post_item:
+                node = post_item['node']
+                url = None
+                
+                # Prioriza image_versions2 (para imagens/vídeos de posts)
+                if 'image_versions2' in node and 'candidates' in node['image_versions2'] and node['image_versions2']['candidates']:
+                    url = node['image_versions2']['candidates'][0]['url']
+                elif 'video_versions' in node and 'candidates' in node['video_versions'] and node['video_versions']['candidates']:
+                    url = node['video_versions']['candidates'][0]['url']
+                elif 'display_url' in node: # fallback para URL de exibição, caso não haja versions2
+                    url = node['display_url']
+                elif 'shortcode' in node: # Outra opção: construir a URL do post
+                    url = f"https://www.instagram.com/p/{node['shortcode']}/"
 
-            if url and url not in latest_posts_urls:
-                latest_posts_urls.append(url)
-            
-            if len(latest_posts_urls) >= num_posts_to_get:
-                break
+                if url and url not in latest_posts_urls:
+                    latest_posts_urls.append(url)
+                
+                if len(latest_posts_urls) >= num_posts_to_get:
+                    break
         
         profile_data['latest_posts_urls'] = latest_posts_urls
         
