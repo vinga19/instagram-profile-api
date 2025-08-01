@@ -73,12 +73,8 @@ def fetch_instagram_rapidapi_free(username):
         
         if response.status_code == 200:
             data = response.json()
-            # Este endpoint parece retornar os dados do perfil em um nível diferente
-            # Forçamos a extração para o formato de perfil
-            if 'user_data' in data:
-                return {'success': True, 'data': data, 'method': api['name']}
-            else:
-                return {'success': False, 'error': 'api_error', 'message': f"Resposta da API não tem 'user_data'"}
+            # Removendo a verificação aqui para passar o JSON completo para a normalização
+            return {'success': True, 'data': data, 'method': api['name']}
         else:
             print(f"❌ {api['name']} - Status {response.status_code}, Resposta: {response.text}")
             return {'success': False, 'error': 'api_error', 'message': f"Status {response.status_code}: {response.text}"}
@@ -93,8 +89,14 @@ def normalize_profile_data(api_data, username, method):
     try:
         print(f"🔧 Normalizando dados do método: {method}")
         
-        user_data = api_data.get('user_data')
-        posts_data = api_data.get('user_posts', [])
+        # A nova API pode não ter 'user_data', então vamos tentar extrair o que podemos
+        # A resposta do endpoint parece ser um JSON simples com chaves como 'data', 'user' ou 'user_info'.
+        # Vamos tentar encontrar os dados do usuário em diferentes chaves.
+        user_data = api_data.get('user') or api_data.get('data', {}).get('user') or api_data.get('user_info') or api_data
+        
+        # A resposta do endpoint ig_get_fb_profile_hover.php não parece incluir posts.
+        # Portanto, vamos inicializar posts_data como uma lista vazia.
+        posts_data = []
         
         if not user_data:
             print("❌ Estrutura de dados de usuário não reconhecida")
@@ -239,7 +241,7 @@ def health_check():
         "rapidapi_key_preview": f"{rapidapi_key[:10]}***{rapidapi_key[-5:]}" if rapidapi_key else "❌ Não configurada",
         "timestamp": datetime.now().isoformat(),
         "cache_size": len(cache),
-        "version": "5.0.1 - Endpoint Corrigido",
+        "version": "5.0.2 - Passando JSON Bruto para Normalização",
         "methods": [
             "🌟 Instagram Scraper Stable API (ig_get_fb_profile_hover)"
         ],
@@ -260,7 +262,9 @@ def test_all_methods(username):
     
     print("🧪 Testando RapidAPI...")
     result = fetch_instagram_rapidapi_free(username)
+    
     profile_data = normalize_profile_data(result.get('data'), username, result.get('method'))
+    
     results['rapidapi'] = {
         'success': result['success'],
         'error': result.get('error', ''),
@@ -268,7 +272,9 @@ def test_all_methods(username):
         'method': result.get('method', ''),
         'has_data': bool(result.get('data')),
         'profile_data_extracted': bool(profile_data),
-        'posts_extracted': len(profile_data.get('latest_posts_urls', [])) if profile_data else 0
+        'posts_extracted': len(profile_data.get('latest_posts_urls', [])) if profile_data else 0,
+        # Adicionando o JSON bruto para depuração
+        'raw_response_keys': list(result.get('data').keys()) if result.get('data') else []
     }
     
     return jsonify({
@@ -333,7 +339,7 @@ def index():
     
     return jsonify({
         "🚀 API": "Instagram Profile Scraper - VERSÃO DE TESTE",
-        "version": "5.0.1 - Endpoint Corrigido",
+        "version": "5.0.2 - Passando JSON Bruto para Normalização",
         "status": "✅ Funciona!" if rapidapi_configured else "⚠️ Configuração pendente",
         "guarantee": "🛡️ Dependente da sua chave RapidAPI - sem fallbacks",
         "endpoints": {
