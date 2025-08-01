@@ -42,7 +42,7 @@ def rate_limit():
 
 def fetch_instagram_rapidapi_free(username):
     """
-    Método de busca para a Instagram Scraper Stable API (Basic User + Posts).
+    Método de busca para a Instagram Scraper Stable API (Corrigido com o endpoint do cURL).
     Este é o único método ativo nesta versão.
     """
     
@@ -50,12 +50,11 @@ def fetch_instagram_rapidapi_free(username):
     if not rapidapi_key:
         return {'success': False, 'error': 'missing_key', 'message': 'RAPIDAPI_KEY não configurada'}
     
-    # Única API configurada para teste
     api = {
-        'name': 'Instagram Scraper Stable API (Basic User + Posts)',
+        'name': 'Instagram Scraper Stable API (ig_get_fb_profile_hover)',
         'host': 'instagram-scraper-stable-api.p.rapidapi.com',
-        'url': 'https://instagram-scraper-stable-api.p.rapidapi.com/basic-user-posts',
-        'param_name': 'username_or_url'
+        'url': 'https://instagram-scraper-stable-api.p.rapidapi.com/ig_get_fb_profile_hover.php',
+        'param_name': 'Username_or_url'
     }
     
     try:
@@ -74,7 +73,12 @@ def fetch_instagram_rapidapi_free(username):
         
         if response.status_code == 200:
             data = response.json()
-            return {'success': True, 'data': data, 'method': api['name']}
+            # Este endpoint parece retornar os dados do perfil em um nível diferente
+            # Forçamos a extração para o formato de perfil
+            if 'user_data' in data:
+                return {'success': True, 'data': data, 'method': api['name']}
+            else:
+                return {'success': False, 'error': 'api_error', 'message': f"Resposta da API não tem 'user_data'"}
         else:
             print(f"❌ {api['name']} - Status {response.status_code}, Resposta: {response.text}")
             return {'success': False, 'error': 'api_error', 'message': f"Status {response.status_code}: {response.text}"}
@@ -221,7 +225,6 @@ def get_instagram_profile_api():
 
 def get_instagram_profile_internal(username):
     """Lógica auxiliar para evitar duplicação de código"""
-    # Esta função agora é um wrapper para a get_instagram_profile_original
     return get_instagram_profile_original(username)
 
 @app.route('/health', methods=['GET'])
@@ -236,9 +239,9 @@ def health_check():
         "rapidapi_key_preview": f"{rapidapi_key[:10]}***{rapidapi_key[-5:]}" if rapidapi_key else "❌ Não configurada",
         "timestamp": datetime.now().isoformat(),
         "cache_size": len(cache),
-        "version": "5.0.0 - Apenas Scraper Stable API",
+        "version": "5.0.1 - Endpoint Corrigido",
         "methods": [
-            "🌟 Instagram Scraper Stable API (Basic User + Posts)"
+            "🌟 Instagram Scraper Stable API (ig_get_fb_profile_hover)"
         ],
         "note": "Esta versão depende exclusivamente da chave RapidAPI para a API acima"
     })
@@ -247,7 +250,6 @@ def health_check():
 def test_all_methods(username):
     """
     Testa o único método ativo para debug.
-    A lógica de teste foi simplificada para a nova versão.
     """
     if not username:
         return jsonify({"error": "Username é obrigatório"}), 400
@@ -331,7 +333,7 @@ def index():
     
     return jsonify({
         "🚀 API": "Instagram Profile Scraper - VERSÃO DE TESTE",
-        "version": "5.0.0 - Apenas Scraper Stable API",
+        "version": "5.0.1 - Endpoint Corrigido",
         "status": "✅ Funciona!" if rapidapi_configured else "⚠️ Configuração pendente",
         "guarantee": "🛡️ Dependente da sua chave RapidAPI - sem fallbacks",
         "endpoints": {
