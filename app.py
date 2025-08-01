@@ -69,7 +69,7 @@ def fetch_instagram_rapidapi_free(username):
         
         response = requests.get(api['url'], headers=headers, params=querystring, timeout=15)
         
-        print(f"  {api['name']} - Status: {response.status_code}")
+        print(f"📊 {api['name']} - Status: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
@@ -234,7 +234,7 @@ def health_check():
         "note": "Esta versão depende exclusivamente da chave RapidAPI para a API acima"
     })
 
-@app.route('/test/<username>', methods=['GET>')
+@app.route('/test/<username>', methods=['GET'])
 def test_all_methods(username):
     """
     Testa o único método ativo para debug.
