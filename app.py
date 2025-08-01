@@ -40,10 +40,9 @@ def rate_limit():
     
     last_request_time = time.time()
 
-def fetch_instagram_rapidapi_free(username):
+def fetch_instagram_looter(username):
     """
-    Método de busca para a Instagram Scraper Stable API.
-    Esta é a única fonte de dados configurada.
+    Método de busca para a Instagram Looter API.
     """
     
     rapidapi_key = os.environ.get('RAPIDAPI_KEY')
@@ -51,10 +50,10 @@ def fetch_instagram_rapidapi_free(username):
         return {'success': False, 'error': 'missing_key', 'message': 'RAPIDAPI_KEY não configurada'}
     
     api = {
-        'name': 'Instagram Scraper Stable API (ig_get_fb_profile_hover)',
-        'host': 'instagram-scraper-stable-api.p.rapidapi.com',
-        'url': 'https://instagram-scraper-stable-api.p.rapidapi.com/ig_get_fb_profile_hover.php',
-        'param_name': 'Username_or_url'
+        'name': 'Instagram Looter',
+        'host': 'instagram-looter.p.rapidapi.com',
+        'url': 'https://instagram-looter.p.rapidapi.com/user',
+        'param_name': 'username'
     }
     
     try:
@@ -73,7 +72,7 @@ def fetch_instagram_rapidapi_free(username):
         
         if response.status_code == 200:
             data = response.json()
-            if 'user_data' in data and 'user_posts' in data:
+            if 'user' in data:
                 return {'success': True, 'data': data, 'method': api['name']}
             else:
                 return {'success': False, 'error': 'api_error', 'message': f"Resposta da API com estrutura inválida. JSON keys: {list(data.keys())}"}
@@ -130,18 +129,17 @@ def fetch_instagram_public_scraper(username):
     except Exception as e:
         return {'success': False, 'error': 'scraper_error', 'message': f'Erro no scraper: {str(e)}'}
 
-
 def normalize_profile_data(api_data, username, method):
     """Normaliza os dados do perfil e extrai as URLs das postagens."""
     
     try:
         print(f"🔧 Normalizando dados do método: {method}")
         
-        user_data = api_data.get('user_data')
-        posts_data = api_data.get('user_posts', [])
+        user_data = api_data.get('user')
+        posts_data = api_data.get('items', [])
         
         if not user_data:
-            print("❌ Estrutura de dados de usuário não reconhecida. Chave 'user_data' não encontrada.")
+            print("❌ Estrutura de dados de usuário não reconhecida. Chave 'user' não encontrada.")
             return None
         
         print(f"✅ User data encontrado - Keys: {list(user_data.keys())[:5]}...")
@@ -193,20 +191,17 @@ def normalize_profile_data(api_data, username, method):
         num_posts_to_get = 10
         
         for post_item in posts_data:
-            if 'node' in post_item:
-                node = post_item['node']
-                url = None
-                
-                if 'image_versions2' in node and 'candidates' in node['image_versions2'] and node['image_versions2']['candidates']:
-                    url = node['image_versions2']['candidates'][0]['url']
-                elif 'video_versions' in node and 'candidates' in node['video_versions'] and node['video_versions']['candidates']:
-                    url = node['video_versions']['candidates'][0]['url']
+            url = None
+            if 'image_versions2' in post_item and 'candidates' in post_item['image_versions2'] and post_item['image_versions2']['candidates']:
+                url = post_item['image_versions2']['candidates'][0]['url']
+            elif 'video_versions' in post_item and 'candidates' in post_item['video_versions'] and post_item['video_versions']['candidates']:
+                url = post_item['video_versions']['candidates'][0]['url']
 
-                if url and url not in latest_posts_urls:
-                    latest_posts_urls.append(url)
-                
-                if len(latest_posts_urls) >= num_posts_to_get:
-                    break
+            if url and url not in latest_posts_urls:
+                latest_posts_urls.append(url)
+            
+            if len(latest_posts_urls) >= num_posts_to_get:
+                break
         
         profile_data['latest_posts_urls'] = latest_posts_urls
         
@@ -234,7 +229,7 @@ def get_instagram_profile_original(username):
         rate_limit()
         
         methods = [
-            ("RapidAPI Free", fetch_instagram_rapidapi_free),
+            ("Instagram Looter", fetch_instagram_looter),
             ("Public Scraper", fetch_instagram_public_scraper),
         ]
         
@@ -255,7 +250,7 @@ def get_instagram_profile_original(username):
                 "error": "Todos os métodos falharam",
                 "details": "Nenhuma fonte de dados funcionou",
                 "timestamp": datetime.now().isoformat(),
-                "suggestion": "Verifique sua chave RapidAPI ou tente novamente mais tarde"
+                "suggestion": "Verifique sua chave RapidAPI e tente novamente mais tarde"
             }), 502
         
         profile_data = normalize_profile_data(result['data'], username, result['method'])
@@ -296,9 +291,9 @@ def health_check():
         "rapidapi_key_preview": f"{rapidapi_key[:10]}***{rapidapi_key[-5:]}" if rapidapi_key else "❌ Não configurada",
         "timestamp": datetime.now().isoformat(),
         "cache_size": len(cache),
-        "version": "6.1.0 - Apenas RapidAPI e Scraper Público",
+        "version": "7.0.0 - Foco no Instagram Looter",
         "methods": [
-            "🌟 Instagram Scraper Stable API (ig_get_fb_profile_hover)",
+            "🌟 Instagram Looter",
             "🌐 Scraper público (backup)"
         ],
         "note": "Esta versão não utiliza dados mock, retornando erro se todas as fontes falharem."
@@ -307,7 +302,7 @@ def health_check():
 @app.route('/test/<username>', methods=['GET'])
 def test_all_methods(username):
     """
-    Testa o único método ativo para debug.
+    Testa todos os métodos para debug.
     """
     if not username:
         return jsonify({"error": "Username é obrigatório"}), 400
@@ -316,18 +311,33 @@ def test_all_methods(username):
     
     results = {}
     
-    print("🧪 Testando RapidAPI...")
-    result = fetch_instagram_rapidapi_free(username)
-    profile_data = normalize_profile_data(result.get('data'), username, result.get('method'))
-    results['rapidapi'] = {
-        'success': result['success'],
-        'error': result.get('error', ''),
-        'message': result.get('message', ''),
-        'method': result.get('method', ''),
-        'has_data': bool(result.get('data')),
-        'profile_data_extracted': bool(profile_data),
-        'posts_extracted': len(profile_data.get('latest_posts_urls', [])) if profile_data else 0,
-        'raw_response_keys': list(result.get('data').keys()) if result.get('data') else []
+    print("🧪 Testando Instagram Looter...")
+    result1 = fetch_instagram_looter(username)
+    profile_data1 = normalize_profile_data(result1.get('data'), username, result1.get('method'))
+    results['instagram_looter'] = {
+        'success': result1['success'],
+        'error': result1.get('error', ''),
+        'message': result1.get('message', ''),
+        'method': result1.get('method', ''),
+        'has_data': bool(result1.get('data')),
+        'profile_data_extracted': bool(profile_data1),
+        'posts_extracted': len(profile_data1.get('latest_posts_urls', [])) if profile_data1 else 0,
+        'raw_response_keys': list(result1.get('data').keys()) if result1.get('data') else []
+    }
+    
+    time.sleep(1)
+    
+    print("🧪 Testando Scraper Público...")
+    result2 = fetch_instagram_public_scraper(username)
+    profile_data2 = normalize_profile_data(result2.get('data'), username, result2.get('method'))
+    results['public_scraper'] = {
+        'success': result2['success'],
+        'error': result2.get('error', ''),
+        'message': result2.get('message', ''),
+        'method': result2.get('method', ''),
+        'has_data': bool(result2.get('data')),
+        'profile_data_extracted': bool(profile_data2),
+        'posts_extracted': len(profile_data2.get('latest_posts_urls', [])) if profile_data2 else 0
     }
     
     return jsonify({
@@ -335,9 +345,11 @@ def test_all_methods(username):
         "test_results": results,
         "timestamp": datetime.now().isoformat(),
         "summary": {
-            "working_methods": 1 if results['rapidapi']['success'] else 0,
-            "total_methods": 1,
-            "best_option": "rapidapi" if results['rapidapi']['success'] else "falha"
+            "working_methods": sum(1 for r in results.values() if r['success']),
+            "total_methods": len(results),
+            "best_option": "instagram_looter" if results['instagram_looter']['success'] and results['instagram_looter']['profile_data_extracted'] else 
+                          "public_scraper" if results['public_scraper']['success'] and results['public_scraper']['profile_data_extracted'] else 
+                          "falha"
         }
     })
 
@@ -365,7 +377,7 @@ def setup_guide():
         },
         "setup_steps": [
             "1. 🌐 Vá para rapidapi.com e crie uma conta",
-            "2. 🔍 Procure por 'Instagram Scraper Stable API'",
+            "2. 🔍 Procure por 'Instagram Looter'",
             "3. 📋 Subscribe no plano GRATUITO (Basic/Free tier)",
             "4. 📝 Copie sua X-RapidAPI-Key",
             "5. ⚙️ Railway: Vá no seu projeto, clique no serviço 'web', vá em 'Variables' → Adicione RAPIDAPI_KEY = sua_chave",
@@ -373,8 +385,8 @@ def setup_guide():
             "7. ✅ Teste: /instagram/cristiano"
         ],
         "important_notes": [
-            "⚠️ Esta versão depende EXCLUSIVAMENTE da sua chave RapidAPI",
-            "❌ Não há fallbacks para dados mock ou scrapers públicos nesta versão"
+            "⚠️ Esta versão tenta várias APIs, mas a RapidAPI é a primeira opção",
+            "❌ Não há fallbacks para dados mock nesta versão, retornando erro se todas as fontes falharem."
         ],
         "test_endpoints": [
             "/instagram/cristiano - Teste completo",
@@ -392,7 +404,7 @@ def index():
     
     return jsonify({
         "🚀 API": "Instagram Profile Scraper - VERSÃO DE TESTE",
-        "version": "6.1.0 - Apenas RapidAPI e Scraper Público",
+        "version": "7.0.0 - Foco no Instagram Looter",
         "status": "✅ Funciona!" if rapidapi_configured else "⚠️ Configuração pendente",
         "guarantee": "🛡️ Dependente da sua chave RapidAPI - sem fallbacks",
         "endpoints": {
@@ -404,7 +416,8 @@ def index():
             "⚙️ Setup": "/setup"
         },
         "data_sources": [
-            "1. 🌟 RapidAPI (Instagram Scraper Stable API)"
+            "1. 🌟 RapidAPI (Instagram Looter)",
+            "2. 🌐 Scraper público (backup)"
         ],
         "features": [
             "✅ Cache inteligente (5min)",
