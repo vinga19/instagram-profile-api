@@ -42,8 +42,8 @@ def rate_limit():
 
 def fetch_instagram_rapidapi_free(username):
     """
-    Método de busca para a Instagram Scraper Stable API (Corrigido com o endpoint do cURL).
-    Este é o único método ativo nesta versão.
+    Método de busca para a Instagram Scraper Stable API.
+    Esta é a única fonte de dados configurada.
     """
     
     rapidapi_key = os.environ.get('RAPIDAPI_KEY')
@@ -69,11 +69,10 @@ def fetch_instagram_rapidapi_free(username):
         
         response = requests.get(api['url'], headers=headers, params=querystring, timeout=15)
         
-        print(f"📊 {api['name']} - Status: {response.status_code}")
+        print(f"  {api['name']} - Status: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
-            # Removendo a verificação aqui para passar o JSON completo para a normalização
             return {'success': True, 'data': data, 'method': api['name']}
         else:
             print(f"❌ {api['name']} - Status {response.status_code}, Resposta: {response.text}")
@@ -89,17 +88,11 @@ def normalize_profile_data(api_data, username, method):
     try:
         print(f"🔧 Normalizando dados do método: {method}")
         
-        # A nova API pode não ter 'user_data', então vamos tentar extrair o que podemos
-        # A resposta do endpoint parece ser um JSON simples com chaves como 'data', 'user' ou 'user_info'.
-        # Vamos tentar encontrar os dados do usuário em diferentes chaves.
-        user_data = api_data.get('user') or api_data.get('data', {}).get('user') or api_data.get('user_info') or api_data
-        
-        # A resposta do endpoint ig_get_fb_profile_hover.php não parece incluir posts.
-        # Portanto, vamos inicializar posts_data como uma lista vazia.
-        posts_data = []
+        user_data = api_data.get('user_data')
+        posts_data = api_data.get('user_posts', [])
         
         if not user_data:
-            print("❌ Estrutura de dados de usuário não reconhecida")
+            print("❌ Estrutura de dados de usuário não reconhecida. Chave 'user_data' não encontrada.")
             return None
         
         print(f"✅ User data encontrado - Keys: {list(user_data.keys())[:5]}...")
@@ -117,12 +110,7 @@ def normalize_profile_data(api_data, username, method):
                 value = user_data.get(field)
                 if value is not None:
                     try:
-                        if isinstance(value, dict) and 'count' in value:
-                            return int(value['count'])
-                        elif isinstance(value, dict) and 'edge_count' in value:
-                            return int(value['edge_count'])
-                        else:
-                            return int(value)
+                        return int(value)
                     except (ValueError, TypeError):
                         continue
             return default
@@ -135,16 +123,16 @@ def normalize_profile_data(api_data, username, method):
             return default
         
         profile_data = {
-            "username": get_field(['username', 'user_name', 'login', 'name'], username),
+            "username": get_field(['username', 'user_name', 'login'], username),
             "user_id": get_field(['pk', 'id']),
             "full_name": get_field(['full_name', 'fullName', 'display_name']),
             "biography": get_field(['biography', 'bio', 'description', 'about']),
-            "followers": get_int_field(['follower_count', 'followers', 'followers_count', 'edge_followed_by']),
-            "following": get_int_field(['following_count', 'following', 'followings', 'edge_follow']),
-            "posts_count": get_int_field(['media_count', 'posts', 'posts_count', 'edge_owner_to_timeline_media']),
-            "profile_pic_url": get_field(['profile_pic_url', 'profile_picture', 'avatar', 'profile_image', 'picture']),
+            "followers": get_int_field(['follower_count']),
+            "following": get_int_field(['following_count']),
+            "posts_count": get_int_field(['media_count']),
+            "profile_pic_url": get_field(['profile_pic_url']),
             "is_private": get_bool_field(['is_private', 'private', 'is_locked']),
-            "is_verified": get_bool_field(['is_verified', 'verified', 'is_blue_verified']),
+            "is_verified": get_bool_field(['is_verified', 'verified']),
             "external_url": get_field(['external_url', 'website', 'url', 'link']),
             "cached": False,
             "timestamp": datetime.now().isoformat(),
@@ -152,6 +140,7 @@ def normalize_profile_data(api_data, username, method):
             "data_keys": list(user_data.keys())[:10]
         }
         
+        # Extrai as URLs das últimas postagens com base no JSON fornecido
         latest_posts_urls = []
         num_posts_to_get = 10
         
@@ -161,11 +150,8 @@ def normalize_profile_data(api_data, username, method):
                 url = None
                 
                 if 'image_versions2' in node and 'candidates' in node['image_versions2'] and node['image_versions2']['candidates']:
+                    # Extrai a primeira URL disponível da lista de candidatos
                     url = node['image_versions2']['candidates'][0]['url']
-                elif 'video_versions' in node and 'candidates' in node['video_versions'] and node['video_versions']['candidates']:
-                    url = node['video_versions']['candidates'][0]['url']
-                elif 'shortcode' in node:
-                    url = f"https://www.instagram.com/p/{node['shortcode']}/"
 
                 if url and url not in latest_posts_urls:
                     latest_posts_urls.append(url)
@@ -241,14 +227,14 @@ def health_check():
         "rapidapi_key_preview": f"{rapidapi_key[:10]}***{rapidapi_key[-5:]}" if rapidapi_key else "❌ Não configurada",
         "timestamp": datetime.now().isoformat(),
         "cache_size": len(cache),
-        "version": "5.0.2 - Passando JSON Bruto para Normalização",
+        "version": "6.0.2 - Normalização Final Corrigida",
         "methods": [
             "🌟 Instagram Scraper Stable API (ig_get_fb_profile_hover)"
         ],
         "note": "Esta versão depende exclusivamente da chave RapidAPI para a API acima"
     })
 
-@app.route('/test/<username>', methods=['GET'])
+@app.route('/test/<username>', methods=['GET>')
 def test_all_methods(username):
     """
     Testa o único método ativo para debug.
@@ -262,9 +248,7 @@ def test_all_methods(username):
     
     print("🧪 Testando RapidAPI...")
     result = fetch_instagram_rapidapi_free(username)
-    
     profile_data = normalize_profile_data(result.get('data'), username, result.get('method'))
-    
     results['rapidapi'] = {
         'success': result['success'],
         'error': result.get('error', ''),
@@ -273,7 +257,6 @@ def test_all_methods(username):
         'has_data': bool(result.get('data')),
         'profile_data_extracted': bool(profile_data),
         'posts_extracted': len(profile_data.get('latest_posts_urls', [])) if profile_data else 0,
-        # Adicionando o JSON bruto para depuração
         'raw_response_keys': list(result.get('data').keys()) if result.get('data') else []
     }
     
@@ -339,7 +322,7 @@ def index():
     
     return jsonify({
         "🚀 API": "Instagram Profile Scraper - VERSÃO DE TESTE",
-        "version": "5.0.2 - Passando JSON Bruto para Normalização",
+        "version": "6.0.2 - Normalização Final Corrigida",
         "status": "✅ Funciona!" if rapidapi_configured else "⚠️ Configuração pendente",
         "guarantee": "🛡️ Dependente da sua chave RapidAPI - sem fallbacks",
         "endpoints": {
@@ -367,3 +350,4 @@ def index():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
     app.run(host='0.0.0.0', port=port, debug=True)
+ 
