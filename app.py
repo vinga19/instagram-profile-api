@@ -1,8 +1,7 @@
 from flask import Flask, request, jsonify
-import instaloader
+import requests
 import time
 import random
-import requests
 from datetime import datetime, timedelta
 import os
 
@@ -12,18 +11,9 @@ app = Flask(__name__)
 cache = {}
 CACHE_DURATION = 300  # 5 minutos
 
-# Lista de User-Agents para rotação
-USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/91.0.864.59',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15'
-]
-
 # Controle de rate limiting
 last_request_time = 0
-MIN_DELAY = 3  # Segundos entre requisições
+MIN_DELAY = 1  # Segundos entre requisições (reduzido para APIs externas)
 
 def get_cached_profile(username):
     """Verifica se o perfil está no cache e ainda é válido"""
@@ -44,24 +34,71 @@ def rate_limit():
     time_since_last = current_time - last_request_time
     
     if time_since_last < MIN_DELAY:
-        sleep_time = MIN_DELAY - time_since_last + random.uniform(0.5, 2.0)  # Adiciona variação aleatória
+        sleep_time = MIN_DELAY - time_since_last + random.uniform(0.1, 0.5)
         time.sleep(sleep_time)
     
     last_request_time = time.time()
 
-def create_instaloader_session():
-    """Cria uma sessão do Instaloader com User-Agent rotativo"""
-    L = instaloader.Instaloader(
-        quiet=True,
-        user_agent=random.choice(USER_AGENTS),
-        sleep=True,  # Adiciona delays automáticos
-        fatal_status_codes=[429]  # Não trata 429 como fatal
-    )
+def fetch_instagram_profile_rapidapi(username):
+    """Busca perfil usando RapidAPI Instagram API"""
     
-    # Configurações adicionais para evitar detecção
-    L.context.log = lambda *args, **kwargs: None  # Desabilita logs
+    # Configurações da API (você precisará configurar essas variáveis no Railway)
+    rapidapi_key = os.environ.get('RAPIDAPI_KEY', 'SUA_CHAVE_AQUI')
     
-    return L
+    # Opção 1: Instagram Profile API
+    url = "https://instagram-scraper-2022.p.rapidapi.com/ig/profile_info"
+    
+    querystring = {"username_or_id_or_url": username}
+    
+    headers = {
+        "x-rapidapi-key": rapidapi_key,
+        "x-rapidapi-host": "instagram-scraper-2022.p.rapidapi.com"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, params=querystring, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return {'success': True, 'data': data}
+        elif response.status_code == 429:
+            return {'success': False, 'error': 'rate_limit', 'message': 'API rate limit exceeded'}
+        elif response.status_code == 401:
+            return {'success': False, 'error': 'auth_error', 'message': 'API key inválida ou expirada'}
+        else:
+            return {'success': False, 'error': 'api_error', 'message': f'API retornou status {response.status_code}'}
+            
+    except requests.exceptions.Timeout:
+        return {'success': False, 'error': 'timeout', 'message': 'Timeout na requisição para a API'}
+    except requests.exceptions.RequestException as e:
+        return {'success': False, 'error': 'connection_error', 'message': f'Erro de conexão: {str(e)}'}
+
+def fetch_instagram_profile_alternative(username):
+    """API alternativa caso a primeira falhe"""
+    
+    rapidapi_key = os.environ.get('RAPIDAPI_KEY', 'SUA_CHAVE_AQUI')
+    
+    # Opção 2: Instagram API alternativa
+    url = "https://instagram120.p.rapidapi.com/user/info"
+    
+    querystring = {"username": username}
+    
+    headers = {
+        "x-rapidapi-key": rapidapi_key,
+        "x-rapidapi-host": "instagram120.p.rapidapi.com"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, params=querystring, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return {'success': True, 'data': data}
+        else:
+            return {'success': False, 'error': 'api_error', 'message': f'API retornou status {response.status_code}'}
+            
+    except Exception as e:
+        return {'success': False, 'error': 'connection_error', 'message': f'Erro: {str(e)}'}
 
 @app.route('/api/profile', methods=['GET'])
 def get_instagram_profile():
@@ -86,49 +123,77 @@ def get_instagram_profile():
         # Rate limiting
         rate_limit()
         
-        # Cria sessão com proteções
-        L = create_instaloader_session()
+        # Busca o perfil via RapidAPI
+        result = fetch_instagram_profile_rapidapi(username)
         
+        # Se a primeira API falhar, tenta a alternativa
+        if not result['success']:
+            time.sleep(1)  # Pequeno delay antes de tentar a alternativa
+            result = fetch_instagram_profile_alternative(username)
+        
+        if not result['success']:
+            error_messages = {
+                'rate_limit': {
+                    'error': 'Rate limit da API excedido',
+                    'suggestion': 'Aguarde alguns minutos antes de tentar novamente',
+                    'retry_after': 300
+                },
+                'auth_error': {
+                    'error': 'Erro de autenticação da API',
+                    'suggestion': 'Chave da API pode estar inválida ou expirada'
+                },
+                'api_error': {
+                    'error': 'Erro na API externa',
+                    'suggestion': 'Tente novamente em alguns instantes'
+                },
+                'timeout': {
+                    'error': 'Timeout na requisição',
+                    'suggestion': 'A API externa demorou para responder'
+                },
+                'connection_error': {
+                    'error': 'Erro de conexão',
+                    'suggestion': 'Problema de conectividade com a API externa'
+                }
+            }
+            
+            error_info = error_messages.get(result['error'], {
+                'error': 'Erro desconhecido',
+                'suggestion': 'Tente novamente mais tarde'
+            })
+            
+            return jsonify({
+                **error_info,
+                'details': result['message'],
+                'timestamp': datetime.now().isoformat()
+            }), 503
+        
+        # Processa os dados retornados
+        api_data = result['data']
+        
+        # Normaliza os dados (diferentes APIs podem ter estruturas diferentes)
         try:
-            # Busca o perfil
-            profile = instaloader.Profile.from_username(L.context, username)
+            # Tenta extrair dados da estrutura mais comum
+            if 'user' in api_data:
+                user_data = api_data['user']
+            elif 'data' in api_data:
+                user_data = api_data['data']
+            else:
+                user_data = api_data
             
-            # Coleta posts com limite e delay
-            posts = []
-            post_count = 0
-            max_posts = 10
-            
-            for post in profile.get_posts():
-                if post_count >= max_posts:
-                    break
-                
-                posts.append({
-                    "url": f"https://www.instagram.com/p/{post.shortcode}/",
-                    "likes": post.likes,
-                    "comments": post.comments,
-                    "date": post.date.isoformat()
-                })
-                post_count += 1
-                
-                # Pequeno delay entre posts
-                if post_count < max_posts:
-                    time.sleep(random.uniform(0.5, 1.5))
-            
-            # Prepara resposta
             profile_data = {
-                "username": profile.username,
-                "full_name": profile.full_name,
-                "biography": profile.biography,
-                "followers": profile.followers,
-                "following": profile.followees,
-                "posts_count": profile.mediacount,
-                "profile_pic_url": profile.profile_pic_url,
-                "is_private": profile.is_private,
-                "is_verified": profile.is_verified,
-                "external_url": profile.external_url,
-                "posts": posts,
+                "username": user_data.get('username', username),
+                "full_name": user_data.get('full_name') or user_data.get('name', ''),
+                "biography": user_data.get('biography') or user_data.get('bio', ''),
+                "followers": user_data.get('follower_count') or user_data.get('followers', 0),
+                "following": user_data.get('following_count') or user_data.get('following', 0),
+                "posts_count": user_data.get('media_count') or user_data.get('posts', 0),
+                "profile_pic_url": user_data.get('profile_pic_url') or user_data.get('profile_picture', ''),
+                "is_private": user_data.get('is_private', False),
+                "is_verified": user_data.get('is_verified', False),
+                "external_url": user_data.get('external_url', ''),
                 "cached": False,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "api_source": "RapidAPI"
             }
             
             # Salva no cache
@@ -136,28 +201,14 @@ def get_instagram_profile():
             
             return jsonify(profile_data)
             
-        except instaloader.exceptions.ProfileNotExistsException:
-            return jsonify({"error": f"Perfil @{username} não existe"}), 404
-            
-        except instaloader.exceptions.LoginRequiredException:
+        except KeyError as e:
             return jsonify({
-                "error": "Instagram requer login para este perfil",
-                "suggestion": "Tente novamente em alguns minutos ou use um perfil público"
-            }), 403
+                "error": "Erro ao processar dados da API",
+                "details": f"Campo não encontrado: {str(e)}",
+                "raw_data": api_data,
+                "timestamp": datetime.now().isoformat()
+            }), 500
             
-        except instaloader.exceptions.ConnectionException as e:
-            if "429" in str(e) or "rate" in str(e).lower():
-                return jsonify({
-                    "error": "Instagram está limitando requisições",
-                    "suggestion": "Aguarde alguns minutos antes de tentar novamente",
-                    "retry_after": 300
-                }), 429
-            else:
-                return jsonify({
-                    "error": "Erro de conexão com Instagram",
-                    "details": str(e)
-                }), 503
-                
     except Exception as e:
         return jsonify({
             "error": "Erro interno do servidor",
@@ -168,11 +219,14 @@ def get_instagram_profile():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Endpoint para verificar se a API está funcionando"""
+    rapidapi_configured = bool(os.environ.get('RAPIDAPI_KEY'))
+    
     return jsonify({
         "status": "online",
+        "rapidapi_configured": rapidapi_configured,
         "timestamp": datetime.now().isoformat(),
         "cache_size": len(cache),
-        "version": "1.0.0"
+        "version": "2.0.0 - RapidAPI"
     })
 
 @app.route('/api/cache/clear', methods=['POST'])
@@ -185,25 +239,52 @@ def clear_cache():
         "timestamp": datetime.now().isoformat()
     })
 
+@app.route('/setup', methods=['GET'])
+def setup_guide():
+    """Guia de configuração da API"""
+    return jsonify({
+        "title": "Configuração da API Instagram",
+        "steps": [
+            "1. Crie uma conta no RapidAPI.com",
+            "2. Inscreva-se em uma API do Instagram (muitas têm plano gratuito)",
+            "3. Copie sua chave da API (X-RapidAPI-Key)",
+            "4. No Railway, vá em Variables e adicione: RAPIDAPI_KEY = sua_chave",
+            "5. Faça redeploy da aplicação",
+            "6. Teste com: /api/profile?username=instagram"
+        ],
+        "recommended_apis": [
+            "Instagram Scraper 2022",
+            "Instagram120", 
+            "Instagram Profile Data"
+        ],
+        "free_limits": "A maioria oferece 100-1000 requisições gratuitas por mês",
+        "timestamp": datetime.now().isoformat()
+    })
+
 @app.route('/', methods=['GET'])
 def index():
     """Página inicial com documentação"""
+    rapidapi_configured = bool(os.environ.get('RAPIDAPI_KEY'))
+    
     return jsonify({
-        "message": "API Instagram Profile",
-        "version": "1.0.0",
+        "message": "API Instagram Profile - RapidAPI Version",
+        "version": "2.0.0",
+        "rapidapi_configured": rapidapi_configured,
         "endpoints": {
             "profile": "/api/profile?username=USUARIO",
             "health": "/api/health",
-            "clear_cache": "/api/cache/clear (POST)"
+            "clear_cache": "/api/cache/clear (POST)",
+            "setup": "/setup"
         },
         "features": [
+            "RapidAPI integration (no blocks!)",
+            "Fallback to alternative APIs",
+            "Request caching (5 min)", 
             "Rate limiting protection",
-            "User-Agent rotation",
-            "Request caching (5 min)",
-            "Error handling",
-            "Anti-block measures"
+            "Better error handling"
         ],
-        "usage": "GET /api/profile?username=cristiano",
+        "setup_required": not rapidapi_configured,
+        "next_step": "/setup" if not rapidapi_configured else "Ready to use!",
         "timestamp": datetime.now().isoformat()
     })
 
