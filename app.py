@@ -42,7 +42,7 @@ def rate_limit():
 
 def fetch_instagram_looter(username):
     """
-    Método de busca para a Instagram Looter API.
+    Método de busca para a Instagram Looter API (Corrigido com a URL do cURL).
     """
     
     rapidapi_key = os.environ.get('RAPIDAPI_KEY')
@@ -51,8 +51,8 @@ def fetch_instagram_looter(username):
     
     api = {
         'name': 'Instagram Looter',
-        'host': 'instagram-looter.p.rapidapi.com',
-        'url': 'https://instagram-looter.p.rapidapi.com/user',
+        'host': 'instagram-looter2.p.rapidapi.com',
+        'url': 'https://instagram-looter2.p.rapidapi.com/profile',
         'param_name': 'username'
     }
     
@@ -135,6 +135,7 @@ def normalize_profile_data(api_data, username, method):
     try:
         print(f"🔧 Normalizando dados do método: {method}")
         
+        # A API retorna um objeto com a chave 'user'
         user_data = api_data.get('user')
         posts_data = api_data.get('items', [])
         
@@ -291,7 +292,7 @@ def health_check():
         "rapidapi_key_preview": f"{rapidapi_key[:10]}***{rapidapi_key[-5:]}" if rapidapi_key else "❌ Não configurada",
         "timestamp": datetime.now().isoformat(),
         "cache_size": len(cache),
-        "version": "7.0.0 - Foco no Instagram Looter",
+        "version": "7.0.1 - Corrigido Instagram Looter",
         "methods": [
             "🌟 Instagram Looter",
             "🌐 Scraper público (backup)"
@@ -404,7 +405,7 @@ def index():
     
     return jsonify({
         "🚀 API": "Instagram Profile Scraper - VERSÃO DE TESTE",
-        "version": "7.0.0 - Foco no Instagram Looter",
+        "version": "7.0.1 - Corrigido Instagram Looter",
         "status": "✅ Funciona!" if rapidapi_configured else "⚠️ Configuração pendente",
         "guarantee": "🛡️ Dependente da sua chave RapidAPI - sem fallbacks",
         "endpoints": {
@@ -416,7 +417,7 @@ def index():
             "⚙️ Setup": "/setup"
         },
         "data_sources": [
-            "1. 🌟 RapidAPI (Instagram Looter)",
+            "1. 🌟 Instagram Looter",
             "2. 🌐 Scraper público (backup)"
         ],
         "features": [
