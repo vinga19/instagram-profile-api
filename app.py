@@ -64,6 +64,9 @@ def fetch_instagram_flashapi(username):
             "x-rapidapi-host": api['host']
         }
         
+        # LINHA DE DEPURAÇÃO ADICIONADA AQUI
+        print(f"DEBUG: Enviando Headers: {headers}")
+        
         querystring = {api['param_name']: username, "nocors": "false"}
         
         response = requests.get(api['url'], headers=headers, params=querystring, timeout=15)
@@ -73,7 +76,6 @@ def fetch_instagram_flashapi(username):
         if response.status_code == 200:
             data = response.json()
             if 'user' in data and data.get('status') == 'ok':
-                # Passamos o objeto inteiro para a normalização
                 return {'success': True, 'data': data, 'method': api['name']}
             else:
                 return {'success': False, 'error': 'api_error', 'message': f"Resposta da API com estrutura inválida. JSON: {data}"}
@@ -92,7 +94,6 @@ def normalize_profile_data(api_data, username, method):
     try:
         print(f"🔧 Normalizando dados do método: {method}")
         
-        # A estrutura da FlashAPI tem os dados dentro da chave 'user'
         user_data = api_data.get('user')
         
         if not user_data:
@@ -125,8 +126,6 @@ def normalize_profile_data(api_data, username, method):
                     return bool(value)
             return default
         
-        # Mapeando os campos da nova API. Alguns nomes podem precisar de ajuste
-        # dependendo da resposta completa da FlashAPI.
         profile_data = {
             "username": get_field(['username']),
             "user_id": get_field(['pk', 'id']),
@@ -141,11 +140,10 @@ def normalize_profile_data(api_data, username, method):
             "external_url": get_field(['external_url']),
             "cached": False,
             "timestamp": datetime.now().isoformat(),
-            "api_source": method, # Usar o nome do método diretamente
+            "api_source": method,
             "data_keys_preview": list(user_data.keys())[:10]
         }
         
-        # A API de 'info' geralmente não retorna posts, então retornamos uma lista vazia.
         profile_data['latest_posts_urls'] = []
         
         return profile_data
@@ -171,7 +169,6 @@ def get_instagram_profile(username):
         
         rate_limit()
         
-        # Usando a nova função como método principal
         result = fetch_instagram_flashapi(username)
 
         if not result or not result.get('success'):
@@ -204,7 +201,7 @@ def health_check():
     
     return jsonify({
         "status": "🟢 Online",
-        "version": "7.0.0 - FlashAPI",
+        "version": "7.1.0 - FlashAPI (Debug)",
         "api_principal": "⚡ FlashAPI (User Info by username)",
         "rapidapi_configured": rapidapi_configured,
         "rapidapi_key_preview": f"{rapidapi_key[:5]}...{rapidapi_key[-4:]}" if rapidapi_key else "❌ Não configurada",
@@ -245,7 +242,7 @@ def index():
     """Página inicial com documentação da API"""
     return jsonify({
         "🚀 API": "Instagram Profile Scraper",
-        "version": "7.0.0 - FlashAPI",
+        "version": "7.1.0 - FlashAPI (Debug)",
         "status": "Online",
         "api_source": "⚡ FlashAPI (User Info by username)",
         "endpoints": {
