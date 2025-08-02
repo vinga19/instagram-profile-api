@@ -40,9 +40,9 @@ def rate_limit():
     
     last_request_time = time.time()
 
-def fetch_instagram_looter(username):
+def fetch_flash_api(username):
     """
-    Método de busca para a Instagram Looter API (Corrigido com a URL do cURL).
+    Método de busca para a FlashAPI.
     """
     
     rapidapi_key = os.environ.get('RAPIDAPI_KEY')
@@ -50,10 +50,10 @@ def fetch_instagram_looter(username):
         return {'success': False, 'error': 'missing_key', 'message': 'RAPIDAPI_KEY não configurada'}
     
     api = {
-        'name': 'Instagram Looter',
-        'host': 'instagram-looter2.p.rapidapi.com',
-        'url': 'https://instagram-looter2.p.rapidapi.com/profile',
-        'param_name': 'username'
+        'name': 'FlashAPI',
+        'host': 'flashapi1.p.rapidapi.com',
+        'url': 'https://flashapi1.p.rapidapi.com/ig/info_username/',
+        'param_name': 'user'
     }
     
     try:
@@ -72,7 +72,7 @@ def fetch_instagram_looter(username):
         
         if response.status_code == 200:
             data = response.json()
-            if 'full_name' in data and 'username' in data:
+            if 'user' in data:
                 return {'success': True, 'data': data, 'method': api['name']}
             else:
                 return {'success': False, 'error': 'api_error', 'message': f"Resposta da API com estrutura inválida. JSON keys: {list(data.keys())}"}
@@ -126,17 +126,13 @@ def fetch_instagram_public_scraper(username):
         
         return {'success': False, 'error': 'public_blocked', 'message': 'Endpoints públicos bloqueados'}
         
-    except Exception as e:
-        return {'success': False, 'error': 'scraper_error', 'message': f'Erro no scraper: {str(e)}'}
-
 def normalize_profile_data(api_data, username, method):
     """Normaliza os dados do perfil e extrai as URLs das postagens."""
     
     try:
         print(f"🔧 Normalizando dados do método: {method}")
         
-        user_data = api_data
-        
+        user_data = api_data.get('user')
         posts_data = api_data.get('edge_owner_to_timeline_media', {}).get('edges', [])
         
         if not user_data or 'full_name' not in user_data:
@@ -244,7 +240,7 @@ def get_instagram_profile_original(username):
         rate_limit()
         
         methods = [
-            ("Instagram Looter", fetch_instagram_looter),
+            ("FlashAPI", fetch_flash_api),
             ("Public Scraper", fetch_instagram_public_scraper),
         ]
         
@@ -306,9 +302,9 @@ def health_check():
         "rapidapi_key_preview": f"{rapidapi_key[:10]}***{rapidapi_key[-5:]}" if rapidapi_key else "❌ Não configurada",
         "timestamp": datetime.now().isoformat(),
         "cache_size": len(cache),
-        "version": "7.0.1 - Corrigido Instagram Looter",
+        "version": "8.0.0 - Foco no FlashAPI",
         "methods": [
-            "🌟 Instagram Looter",
+            "🌟 FlashAPI",
             "🌐 Scraper público (backup)"
         ],
         "note": "Esta versão não utiliza dados mock, retornando erro se todas as fontes falharem."
@@ -326,10 +322,10 @@ def test_all_methods(username):
     
     results = {}
     
-    print("🧪 Testando Instagram Looter...")
-    result1 = fetch_instagram_looter(username)
+    print("🧪 Testando FlashAPI...")
+    result1 = fetch_flash_api(username)
     profile_data1 = normalize_profile_data(result1.get('data'), username, result1.get('method'))
-    results['instagram_looter'] = {
+    results['flash_api'] = {
         'success': result1['success'],
         'error': result1.get('error', ''),
         'message': result1.get('message', ''),
@@ -362,7 +358,7 @@ def test_all_methods(username):
         "summary": {
             "working_methods": sum(1 for r in results.values() if r['success']),
             "total_methods": len(results),
-            "best_option": "instagram_looter" if results['instagram_looter']['success'] and results['instagram_looter']['profile_data_extracted'] else 
+            "best_option": "flash_api" if results['flash_api']['success'] and results['flash_api']['profile_data_extracted'] else 
                           "public_scraper" if results['public_scraper']['success'] and results['public_scraper']['profile_data_extracted'] else 
                           "falha"
         }
@@ -392,7 +388,7 @@ def setup_guide():
         },
         "setup_steps": [
             "1. 🌐 Vá para rapidapi.com e crie uma conta",
-            "2. 🔍 Procure por 'Instagram Looter'",
+            "2. 🔍 Procure por 'FlashAPI'",
             "3. 📋 Subscribe no plano GRATUITO (Basic/Free tier)",
             "4. 📝 Copie sua X-RapidAPI-Key",
             "5. ⚙️ Railway: Vá no seu projeto, clique no serviço 'web', vá em 'Variables' → Adicione RAPIDAPI_KEY = sua_chave",
@@ -431,7 +427,7 @@ def index():
             "⚙️ Setup": "/setup"
         },
         "data_sources": [
-            "1. 🌟 Instagram Looter",
+            "1. 🌟 FlashAPI",
             "2. 🌐 Scraper público (backup)"
         ],
         "features": [
